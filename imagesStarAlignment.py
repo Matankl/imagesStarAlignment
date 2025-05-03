@@ -8,7 +8,7 @@ from typing import Tuple
 from itertools import permutations
 
 
-# Import the user‑supplied detection utilities ----------------------------------
+# Import the detection utilities ----------------------------------
 from StarsCords import load_image, detect_stars
 
 
@@ -32,90 +32,6 @@ class MatchResult(NamedTuple):
 # -------------------------------------------------------------------------------
 # Internal maths helpers
 # -------------------------------------------------------------------------------
-
-def _build_rotation_matrix(theta: float) -> np.ndarray:
-    """Return a 2×2 rotation matrix for angle *theta* (radians)."""
-    c, s = math.cos(theta), math.sin(theta)
-    return np.array([[c, -s], [s, c]], dtype=np.float64)
-
-
-def _compute_two_point_transform(a1: np.ndarray,
-                                 b1: np.ndarray,
-                                 a2: np.ndarray,
-                                 b2: np.ndarray
-                                 ) -> Tuple[np.ndarray, float, float, float, float]:
-    """
-    Return the full 3‑DoF similarity transform that maps *a1*→*a2*
-    and *b1*→*b2*.
-
-    We treat every star coordinate as a **row vector**
-    p  = [x  y].  The forward model is
-
-        p' = s · (p @ R) + t ,
-
-    where R is the usual counter‑clockwise 2×2 rotation matrix and **t**
-    is also a row vector (dx, dy).  Working with row‑vectors lets us
-    apply the transform to many points at once with a single
-        points @ R
-    call.
-    """
-    # Vector from first → second pivot in each image ---------------------------
-    v1 = b1 - a1
-    v2 = b2 - a2
-
-    # Isotropic scale ----------------------------------------------------------
-    n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
-    if n1 < 1e-6:
-        raise ValueError("Pivot stars in L1 are too close – cannot compute scale.")
-    s = n2 / n1
-
-    # Rotation (bearing difference) -------------------------------------------
-    theta = math.atan2(v2[1], v2[0]) - math.atan2(v1[1], v1[0])
-    R = _build_rotation_matrix(theta)
-
-    # Translation – **row‑vector** formulation ---------------------------------
-    # Want:  a1  ─→  a2  ⇒  s·(a1@R) + t = a2   ⟹   t = a2 - s·(a1@R)
-    t = a2 - s * (a1 @ R)
-    dx, dy = float(t[0]), float(t[1])
-
-    return R, dx, dy, theta, s
-
-
-def _apply_similarity_transform(points: np.ndarray,
-                                R: np.ndarray,
-                                dx: float,
-                                dy: float,
-                                s: float
-                                ) -> np.ndarray:
-    """
-    Vectorised application of the similarity transform.
-
-    Parameters
-    ----------
-    points : (N, 2) array of row‑vector coordinates.
-
-    Returns
-    -------
-    (N, 2) array with the transform applied.
-    """
-    return s * (points @ R) + np.array([dx, dy])
-
-
-# ---------------------------------------------------------------------------
-# Utility – pick a contrasting text colour for the background pixel under (x, y)
-# ---------------------------------------------------------------------------
-def _text_colour(img: np.ndarray, x: int, y: int) -> Tuple[int, int, int]:
-    """
-    Return (B, G, R) that contrasts with the local background so the digits
-    remain readable on both light and dark skies.
-    """
-    # Sample a 3×3 neighbourhood, clamp indices to image bounds
-    h, w = img.shape[:2]
-    y0, y1 = max(0, y - 1), min(h, y + 2)
-    x0, x1 = max(0, x - 1), min(w, x + 2)
-    patch_mean = img[y0:y1, x0:x1].mean()
-    # If the patch is bright use black, else white
-    return (0, 0, 0) if patch_mean > 128 else (255, 255, 255)
 
 
 # -------------------------------------------------------------------------------
@@ -241,125 +157,8 @@ def match_images(
 # ---------------------------------------------------------------------------
 # Utility – pick a contrasting text colour for the background pixel under (x, y)
 # ---------------------------------------------------------------------------
-def _text_colour(img: np.ndarray, x: int, y: int) -> Tuple[int, int, int]:
-    """
-    Return (B, G, R) that contrasts with the local background so the digits
-    remain readable on both light and dark skies.
-    """
-    # Sample a 3×3 neighbourhood, clamp indices to image bounds
-    h, w = img.shape[:2]
-    y0, y1 = max(0, y - 1), min(h, y + 2)
-    x0, x1 = max(0, x - 1), min(w, x + 2)
-    patch_mean = img[y0:y1, x0:x1].mean()
-    # If the patch is bright use black, else white
-    return (0, 0, 0) if patch_mean > 128 else (255, 255, 255)
 
 
-# def visualise_matches(
-#     l1_path: str,
-#     l2_path: str,
-#     result: MatchResult,
-#     output_path: str = "match_visualisation.png",
-#     *,
-#     point_radius: int = 4,
-#     point_thickness: int = -1,
-#     font: int = cv2.FONT_HERSHEY_SIMPLEX,
-#     font_scale: float = 0.5,
-#     font_thickness: int = 1,
-#     spacer_px: int = 12,
-# ) -> None:
-#     """
-#     Visualize original L1, transformed L1, and L2 side-by-side with matching labels.
-#     """
-#
-#     # Load grayscale images
-#     img1_gray = load_image(l1_path)
-#     img2_gray = load_image(l2_path)
-#
-#     # Convert to BGR for color drawing
-#     img1 = cv2.cvtColor(img1_gray, cv2.COLOR_GRAY2BGR)
-#     img2 = cv2.cvtColor(img2_gray, cv2.COLOR_GRAY2BGR)
-#
-#     # Apply the transform to the image using warpAffine
-#     dx, dy, theta, s = result.transform
-#     # theta = np.radians(theta)
-#
-#     # Construct the similarity transform matrix (rotation + scale + translation)
-#     R = np.array([
-#         [np.cos(theta), -np.sin(theta)],
-#         [np.sin(theta),  np.cos(theta)],
-#     ]) * s
-#
-#     M_affine = np.hstack([R, np.array([[dx], [dy]])])  # Shape (2, 3)
-#
-#     # Warp the original L1 image
-#     h1, w1 = img1.shape[:2]
-#     img1_transformed = cv2.warpAffine(img1, M_affine, (w1, h1), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-#
-#     # Resize all images to the same height
-#     def _resize_keep_aspect(img, h_target):
-#         h, w = img.shape[:2]
-#         if h == h_target:
-#             return img
-#         scale = h_target / h
-#         return cv2.resize(img, (int(round(w * scale)), h_target), interpolation=cv2.INTER_AREA)
-#
-#     h_max = max(img1.shape[0], img2.shape[0])
-#     img1 = _resize_keep_aspect(img1, h_max)
-#     img1_transformed = _resize_keep_aspect(img1_transformed, h_max)
-#     img2 = _resize_keep_aspect(img2, h_max)
-#
-#     # Prepare offsets
-#     spacer = np.zeros((h_max, spacer_px, 3), dtype=np.uint8)
-#     composite = np.hstack([img1, spacer, img1_transformed, spacer.copy(), img2])
-#
-#     offset_l1 = np.array([0, 0])
-#     offset_transformed = np.array([img1.shape[1] + spacer.shape[1], 0])
-#     offset_l2 = np.array([img1.shape[1]*2 + spacer.shape[1]*2, 0])
-#
-#     # Transform L1 star coordinates
-#     transformed_l1_coords = (result.l1_points @ R.T) + np.array([dx, dy])
-#
-#     # Draw dots, labels, and connecting lines
-#     for idx, (p1, p1t, p2) in enumerate(zip(result.l1_points, transformed_l1_coords, result.l2_points), start=1):
-#         x1, y1 = map(int, map(round, p1))
-#         x1t, y1t = map(int, map(round, p1t))
-#         x2, y2 = map(int, map(round, p2))
-#
-#         x1_off = x1 + offset_l1[0]
-#         y1_off = y1 + offset_l1[1]
-#         x1t_off = x1t + offset_transformed[0]
-#         y1t_off = y1t + offset_transformed[1]
-#         x2_off = x2 + offset_l2[0]
-#         y2_off = y2 + offset_l2[1]
-#
-#         # Draw green dots
-#         cv2.circle(composite, (x1_off, y1_off), point_radius, (0, 255, 0), point_thickness)
-#         cv2.circle(composite, (x1t_off, y1t_off), point_radius, (0, 255, 0), point_thickness)
-#         cv2.circle(composite, (x2_off, y2_off), point_radius, (0, 255, 0), point_thickness)
-#
-#         # Draw blue lines connecting the matches
-#         cv2.line(composite, (x1t_off, y1t_off), (x2_off, y2_off), color=(255, 0, 0), thickness=1)
-#
-#         # Draw index labels with contrast-aware colors
-#         for (x, y, color_offset) in [(x1_off, y1_off, _text_colour(composite, x1_off, y1_off)),
-#                                      (x1t_off, y1t_off, _text_colour(composite, x1t_off, y1t_off)),
-#                                      (x2_off, y2_off, _text_colour(composite, x2_off, y2_off))]:
-#             cv2.putText(composite, str(idx), (x + point_radius + 2, y - 2),
-#                         font, font_scale, color_offset, font_thickness, cv2.LINE_AA)
-#
-#
-#     # Save output
-#     cv2.imwrite(output_path, composite)
-#     print(f"[visualise_matches] Saved visualization → '{Path(output_path).resolve()}'\n")
-
-# ---------------------------------------------------------------------------
-# Visualisation – save a PNG showing
-#   1. original L1,
-#   2. L1 after the estimated similarity transform,
-#   3. L2,
-# with matched stars and link lines.
-# ---------------------------------------------------------------------------
 def visualise_matches(
     l1_path: str,
     l2_path: str,

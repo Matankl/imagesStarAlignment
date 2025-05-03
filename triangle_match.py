@@ -24,12 +24,10 @@ Author: ChatGPT (OpenAI) – May 2025
 """
 
 from __future__ import annotations
-
 import itertools
 import math
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple
-
 import cv2
 import numpy as np
 

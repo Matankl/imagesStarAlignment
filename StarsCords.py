@@ -1,12 +1,9 @@
-from itertools import permutations
 from pathlib import Path
-
 import cv2
 import numpy as np
 import csv
 from typing import List, Tuple
 import os
-import sys
 
 
 def load_image(path: str) -> np.ndarray:
@@ -20,7 +17,6 @@ def enhance_contrast(image: np.ndarray) -> np.ndarray:
 def apply_tophat(image: np.ndarray) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
     return cv2.morphologyEx(image, cv2.MORPH_TOPHAT, kernel)
-
 
 
 def detect_stars(image: np.ndarray) -> List[Tuple[float, float, float, float]]:
@@ -69,8 +65,6 @@ def save_to_csv(stars: List[Tuple[float, float, float, float]], output_path: str
         writer.writerows(stars)
 
 
-
-
 def show_detected_stars(image: np.ndarray, stars: List[Tuple[float, float, float, float]], output_image_path: str) -> None:
     """
     Display the image with detected stars marked and save it to disk.
@@ -103,7 +97,6 @@ def show_detected_stars(image: np.ndarray, stars: List[Tuple[float, float, float
     os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
     cv2.imwrite(output_image_path, image_bgr)
     print(f"Saved detected star plot to: {output_image_path}")
-
 
 
 def process_star_image(image_path: str, output_dir: str, show_image: bool = False) -> None:
