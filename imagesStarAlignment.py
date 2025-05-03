@@ -130,7 +130,7 @@ def match_images(
     min_matches: int = 6,
     top_k: int = 30,
     verbose: bool = True,
-    mindist: int = 500
+    mindist: int = 1000
 ) -> Optional[MatchResult]:
     """
     Align two star‑field images and return the best mapping of stars between them.
@@ -196,10 +196,10 @@ def match_images(
             overlap_count = len(unique_l1)
 
             if overlap_count > best_overlap_count:
-                if verbose:
-                    print(f"Trying pivot pair (L1: {i1},{j1}) and (L2: {i2},{j2})")
-                    print(f"  Pivot distance L1: {np.linalg.norm(pivot1[0] - pivot1[1]):.2f}")
-                    print(f"  Pivot distance L2: {np.linalg.norm(pivot2[0] - pivot2[1]):.2f}")
+                # if verbose:
+                    # print(f"Trying pivot pair (L1: {i1},{j1}) and (L2: {i2},{j2})")
+                    # print(f"  Pivot distance L1: {np.linalg.norm(pivot1[0] - pivot1[1]):.2f}")
+                    # print(f"  Pivot distance L2: {np.linalg.norm(pivot2[0] - pivot2[1]):.2f}")
                 best_overlap_count = overlap_count
                 best_transform = matrix
                 best_matches = list(zip(*matches))
@@ -255,125 +255,254 @@ def _text_colour(img: np.ndarray, x: int, y: int) -> Tuple[int, int, int]:
     return (0, 0, 0) if patch_mean > 128 else (255, 255, 255)
 
 
+# def visualise_matches(
+#     l1_path: str,
+#     l2_path: str,
+#     result: MatchResult,
+#     output_path: str = "match_visualisation.png",
+#     *,
+#     point_radius: int = 4,
+#     point_thickness: int = -1,
+#     font: int = cv2.FONT_HERSHEY_SIMPLEX,
+#     font_scale: float = 0.5,
+#     font_thickness: int = 1,
+#     spacer_px: int = 12,
+# ) -> None:
+#     """
+#     Visualize original L1, transformed L1, and L2 side-by-side with matching labels.
+#     """
+#
+#     # Load grayscale images
+#     img1_gray = load_image(l1_path)
+#     img2_gray = load_image(l2_path)
+#
+#     # Convert to BGR for color drawing
+#     img1 = cv2.cvtColor(img1_gray, cv2.COLOR_GRAY2BGR)
+#     img2 = cv2.cvtColor(img2_gray, cv2.COLOR_GRAY2BGR)
+#
+#     # Apply the transform to the image using warpAffine
+#     dx, dy, theta, s = result.transform
+#     # theta = np.radians(theta)
+#
+#     # Construct the similarity transform matrix (rotation + scale + translation)
+#     R = np.array([
+#         [np.cos(theta), -np.sin(theta)],
+#         [np.sin(theta),  np.cos(theta)],
+#     ]) * s
+#
+#     M_affine = np.hstack([R, np.array([[dx], [dy]])])  # Shape (2, 3)
+#
+#     # Warp the original L1 image
+#     h1, w1 = img1.shape[:2]
+#     img1_transformed = cv2.warpAffine(img1, M_affine, (w1, h1), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+#
+#     # Resize all images to the same height
+#     def _resize_keep_aspect(img, h_target):
+#         h, w = img.shape[:2]
+#         if h == h_target:
+#             return img
+#         scale = h_target / h
+#         return cv2.resize(img, (int(round(w * scale)), h_target), interpolation=cv2.INTER_AREA)
+#
+#     h_max = max(img1.shape[0], img2.shape[0])
+#     img1 = _resize_keep_aspect(img1, h_max)
+#     img1_transformed = _resize_keep_aspect(img1_transformed, h_max)
+#     img2 = _resize_keep_aspect(img2, h_max)
+#
+#     # Prepare offsets
+#     spacer = np.zeros((h_max, spacer_px, 3), dtype=np.uint8)
+#     composite = np.hstack([img1, spacer, img1_transformed, spacer.copy(), img2])
+#
+#     offset_l1 = np.array([0, 0])
+#     offset_transformed = np.array([img1.shape[1] + spacer.shape[1], 0])
+#     offset_l2 = np.array([img1.shape[1]*2 + spacer.shape[1]*2, 0])
+#
+#     # Transform L1 star coordinates
+#     transformed_l1_coords = (result.l1_points @ R.T) + np.array([dx, dy])
+#
+#     # Draw dots, labels, and connecting lines
+#     for idx, (p1, p1t, p2) in enumerate(zip(result.l1_points, transformed_l1_coords, result.l2_points), start=1):
+#         x1, y1 = map(int, map(round, p1))
+#         x1t, y1t = map(int, map(round, p1t))
+#         x2, y2 = map(int, map(round, p2))
+#
+#         x1_off = x1 + offset_l1[0]
+#         y1_off = y1 + offset_l1[1]
+#         x1t_off = x1t + offset_transformed[0]
+#         y1t_off = y1t + offset_transformed[1]
+#         x2_off = x2 + offset_l2[0]
+#         y2_off = y2 + offset_l2[1]
+#
+#         # Draw green dots
+#         cv2.circle(composite, (x1_off, y1_off), point_radius, (0, 255, 0), point_thickness)
+#         cv2.circle(composite, (x1t_off, y1t_off), point_radius, (0, 255, 0), point_thickness)
+#         cv2.circle(composite, (x2_off, y2_off), point_radius, (0, 255, 0), point_thickness)
+#
+#         # Draw blue lines connecting the matches
+#         cv2.line(composite, (x1t_off, y1t_off), (x2_off, y2_off), color=(255, 0, 0), thickness=1)
+#
+#         # Draw index labels with contrast-aware colors
+#         for (x, y, color_offset) in [(x1_off, y1_off, _text_colour(composite, x1_off, y1_off)),
+#                                      (x1t_off, y1t_off, _text_colour(composite, x1t_off, y1t_off)),
+#                                      (x2_off, y2_off, _text_colour(composite, x2_off, y2_off))]:
+#             cv2.putText(composite, str(idx), (x + point_radius + 2, y - 2),
+#                         font, font_scale, color_offset, font_thickness, cv2.LINE_AA)
+#
+#
+#     # Save output
+#     cv2.imwrite(output_path, composite)
+#     print(f"[visualise_matches] Saved visualization → '{Path(output_path).resolve()}'\n")
+
+# ---------------------------------------------------------------------------
+# Visualisation – save a PNG showing
+#   1. original L1,
+#   2. L1 after the estimated similarity transform,
+#   3. L2,
+# with matched stars and link lines.
+# ---------------------------------------------------------------------------
 def visualise_matches(
     l1_path: str,
     l2_path: str,
-    result: MatchResult,
-    output_path: str = "match_visualisation.png",
+    match_result: MatchResult,
     *,
-    point_radius: int = 4,
-    point_thickness: int = -1,
-    font: int = cv2.FONT_HERSHEY_SIMPLEX,
-    font_scale: float = 0.5,
-    font_thickness: int = 1,
-    spacer_px: int = 12,
+    output_path: str,
+    circle_radius: int = 4,
+    circle_thickness: int = -1,        # -1 ➜ filled
+    line_thickness: int = 1,
+    colour_orig: Tuple[int, int, int] = (0, 255, 255),   # yellow
+    colour_warp: Tuple[int, int, int] = (0, 0, 255),     # red
+    colour_tgt: Tuple[int, int, int]  = (0, 255, 0),     # green
+    colour_line: Tuple[int, int, int] = (255, 0, 0),     # blue
+    font=cv2.FONT_HERSHEY_SIMPLEX
 ) -> None:
     """
-    Visualize original L1, transformed L1, and L2 side-by-side with matching labels.
+    Write a composite PNG with three panels and the matched‑star overlay.
+
+    Parameters
+    ----------
+    l1_path, l2_path   : str
+        Filenames of the original images.
+    match_result       : MatchResult
+        Output of `match_images`.
+    output_path        : str
+        Where to save the PNG.
     """
 
-    # Load grayscale images
-    img1_gray = load_image(l1_path)
-    img2_gray = load_image(l2_path)
+    # ---------------------------------------------------------------------
+    # 1. Load images (force 3‑channel BGR so we can draw colour)
+    # ---------------------------------------------------------------------
+    img1 = cv2.imread(l1_path, cv2.IMREAD_COLOR)
+    img2 = cv2.imread(l2_path, cv2.IMREAD_COLOR)
+    if img1 is None or img2 is None:
+        raise FileNotFoundError("Could not load one of the input images.")
 
-    # Convert to BGR for color drawing
-    img1 = cv2.cvtColor(img1_gray, cv2.COLOR_GRAY2BGR)
-    img2 = cv2.cvtColor(img2_gray, cv2.COLOR_GRAY2BGR)
-
-    # Apply the transform to the image using warpAffine
-    dx, dy, theta_deg, s = result.transform
-    theta = np.radians(theta_deg)
-
-    # Construct the similarity transform matrix (rotation + scale + translation)
-    R = np.array([
-        [np.cos(theta), -np.sin(theta)],
-        [np.sin(theta),  np.cos(theta)],
-    ]) * s
-
-    M_affine = np.hstack([R, np.array([[dx], [dy]])])  # Shape (2, 3)
-
-    # Warp the original L1 image
     h1, w1 = img1.shape[:2]
-    img1_transformed = cv2.warpAffine(img1, M_affine, (w1, h1), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+    h2, w2 = img2.shape[:2]
+    H   = max(h1, h2)                     # canvas height
+    pad = 20                              # gap between panels
 
-    # Resize all images to the same height
-    def _resize_keep_aspect(img, h_target):
-        h, w = img.shape[:2]
-        if h == h_target:
-            return img
-        scale = h_target / h
-        return cv2.resize(img, (int(round(w * scale)), h_target), interpolation=cv2.INTER_AREA)
+    # ---------------------------------------------------------------------
+    # 2. Warp L1 → L2 frame with the 2×3 similarity matrix
+    # ---------------------------------------------------------------------
+    M = np.asarray([[match_result.transform[3] * math.cos(match_result.transform[2]),
+                     -match_result.transform[3] * math.sin(match_result.transform[2]),
+                     match_result.transform[0]],
+                    [match_result.transform[3] * math.sin(match_result.transform[2]),
+                      match_result.transform[3] * math.cos(match_result.transform[2]),
+                      match_result.transform[1]]],
+                   dtype=np.float32)       # build it back so it’s explicit
 
-    h_max = max(img1.shape[0], img2.shape[0])
-    img1 = _resize_keep_aspect(img1, h_max)
-    img1_transformed = _resize_keep_aspect(img1_transformed, h_max)
-    img2 = _resize_keep_aspect(img2, h_max)
+    img1_warp = cv2.warpAffine(img1, M, dsize=(w2, h2),
+                               flags=cv2.INTER_LINEAR,
+                               borderMode=cv2.BORDER_CONSTANT,
+                               borderValue=0)
 
-    # Prepare offsets
-    spacer = np.zeros((h_max, spacer_px, 3), dtype=np.uint8)
-    composite = np.hstack([img1, spacer, img1_transformed, spacer.copy(), img2])
+    # ---------------------------------------------------------------------
+    # 3. Assemble the big canvas: [orig | warped | target]
+    # ---------------------------------------------------------------------
+    W = w1 + pad + w2 + pad + w2          # 3rd panel same width as L2
+    canvas = np.zeros((H, W, 3), dtype=np.uint8)
 
-    offset_l1 = np.array([0, 0])
-    offset_transformed = np.array([img1.shape[1] + spacer.shape[1], 0])
-    offset_l2 = np.array([img1.shape[1]*2 + spacer.shape[1]*2, 0])
+    # Offsets of the three panels on the canvas
+    off_orig = (0,             0)
+    off_warp = (w1 + pad,      0)
+    off_tgt  = (w1 + pad + w2 + pad, 0)
 
-    # Transform L1 star coordinates
-    transformed_l1_coords = (result.l1_points @ R.T) + np.array([dx, dy])
+    # Paste images
+    canvas[off_orig[1]:off_orig[1]+h1, off_orig[0]:off_orig[0]+w1] = img1
+    canvas[off_warp[1]:off_warp[1]+h2, off_warp[0]:off_warp[0]+w2] = img1_warp
+    canvas[off_tgt [1]:off_tgt [1]+h2, off_tgt [0]:off_tgt [0]+w2] = img2
 
-    # Draw dots, labels, and connecting lines
-    for idx, (p1, p1t, p2) in enumerate(zip(result.l1_points, transformed_l1_coords, result.l2_points), start=1):
-        x1, y1 = map(int, map(round, p1))
-        x1t, y1t = map(int, map(round, p1t))
-        x2, y2 = map(int, map(round, p2))
+    # ---------------------------------------------------------------------
+    # 4. Draw matched stars
+    # ---------------------------------------------------------------------
+    # Convenience offsets for later
+    ox, oy = off_orig
+    wx, wy = off_warp
+    tx, ty = off_tgt
 
-        x1_off = x1 + offset_l1[0]
-        y1_off = y1 + offset_l1[1]
-        x1t_off = x1t + offset_transformed[0]
-        y1t_off = y1t + offset_transformed[1]
-        x2_off = x2 + offset_l2[0]
-        y2_off = y2 + offset_l2[1]
+    # Pre‑append the 1 for homogeneous coordinates once
+    ones = np.ones((match_result.l1_points.shape[0], 1), dtype=np.float32)
+    l1_h = np.hstack([match_result.l1_points.astype(np.float32), ones])
+    l1_warped = (l1_h @ M.T)              # (N,2) array in warped frame
 
-        # Draw green dots
-        cv2.circle(composite, (x1_off, y1_off), point_radius, (0, 255, 0), point_thickness)
-        cv2.circle(composite, (x1t_off, y1t_off), point_radius, (0, 255, 0), point_thickness)
-        cv2.circle(composite, (x2_off, y2_off), point_radius, (0, 255, 0), point_thickness)
+    for (p_orig, p_warp, p_tgt) in zip(match_result.l1_points,
+                                       l1_warped,
+                                       match_result.l2_points):
 
-        # Draw blue lines connecting the matches
-        cv2.line(composite, (x1t_off, y1t_off), (x2_off, y2_off), color=(255, 0, 0), thickness=1)
+        # Integer pixel coords
+        x_o, y_o = map(int, p_orig)
+        x_w, y_w = map(int, p_warp)
+        x_t, y_t = map(int, p_tgt)
 
-        # Draw index labels with contrast-aware colors
-        for (x, y, color_offset) in [(x1_off, y1_off, _text_colour(composite, x1_off, y1_off)),
-                                     (x1t_off, y1t_off, _text_colour(composite, x1t_off, y1t_off)),
-                                     (x2_off, y2_off, _text_colour(composite, x2_off, y2_off))]:
-            cv2.putText(composite, str(idx), (x + point_radius + 2, y - 2),
-                        font, font_scale, color_offset, font_thickness, cv2.LINE_AA)
+        # Draw circles
+        cv2.circle(canvas, (x_o + ox, y_o + oy), circle_radius,
+                   colour_orig, circle_thickness, lineType=cv2.LINE_AA)
+        cv2.circle(canvas, (x_w + wx, y_w + wy), circle_radius,
+                   colour_warp, circle_thickness, lineType=cv2.LINE_AA)
+        cv2.circle(canvas, (x_t + tx, y_t + ty), circle_radius,
+                   colour_tgt, circle_thickness, lineType=cv2.LINE_AA)
 
+        # Draw connecting line (from warped → target)
+        cv2.line(canvas,
+                 (x_w + wx, y_w + wy),
+                 (x_t + tx, y_t + ty),
+                 colour_line, line_thickness, cv2.LINE_AA)
 
-    # Save output
-    cv2.imwrite(output_path, composite)
-    print(f"[visualise_matches] Saved visualization → '{Path(output_path).resolve()}'")
+    # ---------------------------------------------------------------------
+    # 5. Panel titles
+    # ---------------------------------------------------------------------
+    fh = 0.6                              # font height scale
+    th = 2                                # thickness
+    cv2.putText(canvas, "Original",
+                (ox + 10,  30), font, fh, colour_orig, th, cv2.LINE_AA)
+    cv2.putText(canvas, "Warped to L2",
+                (wx + 10,  30), font, fh, colour_warp, th, cv2.LINE_AA)
+    cv2.putText(canvas, "Target",
+                (tx + 10,  30), font, fh, colour_tgt,  th, cv2.LINE_AA)
+
+    # ---------------------------------------------------------------------
+    # 6. Save
+    # ---------------------------------------------------------------------
+    out_p = Path(output_path)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out_p), canvas)
+    print(f"[visualise_matches] wrote → {out_p}")
+
 
 
 
 def main():
-#     # Example usage (adjust file paths as needed)
-#     # l1_file = "images/ST_db1.png"
-#     # l2_file = "images/ST_db2.png"
-#
-#     # l2_file = "images/ST_db1.png"
-#     # l1_file = "images/ST_db2.png"
-#     #
-#     l1_file = "images/fr1.jpg"
-#     l2_file = "images/fr2.jpg"
-#     # l2_file = "images/fr1.jpg"
-#     # l1_file = "images/fr2.jpg"
-    image_dir_in = Path("images")
-    image_dir_out = Path("images/out")
+    # Example usage (adjust file paths as needed)
+    # image_dir_in = Path("images")
+    # image_dir_out = Path("images/out")
+    image_dir_in = Path("images/dataset")
+    image_dir_out = Path("images/dataset/datasetOut")
     image_files = sorted([f for f in image_dir_in.glob("*") if f.suffix.lower() in {".png", ".jpg", ".jpeg"}])
 
     for img1_path, img2_path in permutations(image_files, 2):
-        print(f"Processing: {img1_path.name} vs {img2_path.name}")
-        result = match_images(str(img1_path), str(img2_path), epsilon=15.0, min_matches=6, verbose=True)
+        print(f"\nProcessing: {img1_path.name} vs {img2_path.name}")
+        result = match_images(str(img1_path), str(img2_path), epsilon=15.0, min_matches=4, verbose=True)
 
         if result is None:
             print(f"No satisfactory alignment for {img1_path.name} vs {img2_path.name}.")
@@ -392,6 +521,7 @@ def main():
                 result,
                 output_path=str(image_dir_out / output_name)
             )
+
 
 
 if __name__ == "__main__":
